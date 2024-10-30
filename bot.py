@@ -3,6 +3,16 @@ from datetime import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 
+ECHO_CHANNEL_ID = 1300604396555731074  #wolves-alliance
+
+DESTINATION_CHANNEL_IDS = [
+    1300604396555731074,  # Wolves of War
+    1300609238023934042,  # Redmoon Cult
+    1300646389155627069,  # OneMillionBears
+    # Add more destination channels as needed
+]
+
+
 # Load environment variables
 load_dotenv('bot_config.env')
 token = os.getenv("DISCORD_TOKEN")
@@ -20,34 +30,15 @@ bot = commands.Bot(command_prefix="!", intents=intents, case_insensitive=True)
 winners = {}
 roll_numbers = {}  # To track roll numbers per loot roll session
 
-# Load winners from JSON
-def load_winners():
-    global winners
-    if os.path.exists("winners.json"):
-        with open("winners.json", "r") as f:
-            winners = json.load(f)
-
-# Save winners to JSON
-def save_winners():
-    with open("winners.json", "w") as f:
-        json.dump(winners, f)
-
-# Log winner information to a file
-def log_winner(item, winner_name, roll_value):
-    with open("winners_log.txt", "a") as f:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"{timestamp} - {winner_name} (Roll #{roll_value}) won the {item}\n")
-
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
-    load_winners()
 
 @bot.command(name="lootroll", description="React to participate in loot roll for a specific item with a timer")
 async def lootroll(ctx, item: str, time: int = 30):
     # Initialize roll numbers for this item
     roll_numbers[item] = {}
-    
+
     message = await ctx.send(f"💰 Time to get rich! React with 🎲 to claim the **{item}**! ⏳ Time left: {time} seconds!")
     await message.add_reaction("🎲")
 
@@ -80,52 +71,15 @@ async def lootroll(ctx, item: str, time: int = 30):
     if item not in winners:
         winners[item] = []
     winners[item].append(f"{winner_name} (Roll #{roll_value})")
-    save_winners()
 
     # List of random emojis for winner announcement
     winner_emojis = ["🏆", "🐔", "🖕", "🥇", "🕺", "🐺", "💣", "🔥"]
     random_emoji = random.choice(winner_emojis)  # Randomly select a winner emoji
 
-    log_winner(item, winner_name, roll_value)
-
     await ctx.send(f"Congratulations {winner_name}! You won the **{item}** with Roll #{roll_value}! {random_emoji}")  # Winner emoji
 
     # Lock the reactions by removing the bot's own reaction
     await message.clear_reactions()  # This line will remove all reactions after the roll is done
-
-@bot.command(name="checkwinners", description="Check all winners in an embedded list")
-async def check_winners(ctx):
-    if winners:
-        embed = discord.Embed(title="📜 Loot Roll Winners", color=discord.Color.gold())
-        for item, winners_list in winners.items():
-            winners_str = "\n".join([f"• {winner}" for winner in winners_list])
-            embed.add_field(name=f"**{item}**", value=winners_str, inline=False)
-    else:
-        embed = discord.Embed(
-            title="📜 Loot Roll Winners",
-            description="No winners recorded yet.",
-            color=discord.Color.gold()
-        )
-
-    await ctx.send(embed=embed)
-
-@bot.command(name="listitems", description="List all items with loot rolls")
-async def list_items(ctx):
-    if winners:
-        items_str = "\n".join([f"• {item}" for item in winners.keys()])
-        embed = discord.Embed(
-            title="📦 Items with Loot Rolls",
-            description=items_str,
-            color=discord.Color.blue()
-        )
-    else:
-        embed = discord.Embed(
-            title="📦 Items with Loot Rolls",
-            description="No loot rolls have been conducted yet.",
-            color=discord.Color.blue()
-        )
-
-    await ctx.send(embed=embed)
 
 @bot.command(name="clearall", description="Clear all messages in the channel (up to 100).")
 @commands.has_permissions(manage_messages=True)
@@ -139,10 +93,55 @@ async def clearall_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
         await ctx.send(f"This command is on cooldown. Please wait {int(error.retry_after)} seconds before using it again.")
 
-@bot.command(name="clear", description="Clear a specified number of messages.")
+@bot.command(name="announce", description="Sends an announcement to our alliance partners.")
 @commands.has_permissions(manage_messages=True)
-async def clear(ctx, amount: int):
-    await ctx.channel.purge(limit=amount)
-    await ctx.send(f"🧹 Cleared {amount} messages!", delete_after=5)
+async def announce(ctx, *args):
+    # Combine all arguments into a single string
+    announcement_text = " ".join(args)
 
+    # Send the announcement to each specified channel
+    not_found_channels = []
+    for channel_id in DESTINATION_CHANNEL_IDS:
+        destination_channel = bot.get_channel(channel_id)
+        if destination_channel:
+            # Relay the message to each destination channel
+            await destination_channel.send(f"🐺 **ALLIANCE UPDATE:** {announcement_text}")
+        else:
+            not_found_channels.append(channel_id)
+
+    # Notify if any channels could not be found
+    if not_found_channels:
+        await ctx.send(f"Could not find the following channels: {', '.join(map(str, not_found_channels))}")
+
+@bot.event
+async def on_message(message):
+    # Ignore messages from the bot itself
+    if message.author == bot.user:
+        return
+
+    # Check if the message was sent in one of the monitored channels
+    if message.channel.id in DESTINATION_CHANNEL_IDS:
+        # Loop through each channel in DESTINATION_CHANNEL_IDS
+        for channel_id in DESTINATION_CHANNEL_IDS:
+            # Skip the channel where the message was sent
+            if channel_id != message.channel.id:
+                # Get the target channel to echo the message to
+                target_channel = bot.get_channel(channel_id)
+                if target_channel:
+                    # Forward the message content to the target channel
+                    await target_channel.send(
+                        f"📢 **Message from {message.author.display_name} in {message.channel.name}:** {message.content}"
+                    )
+
+    # Ensure other commands can still function
+    await bot.process_commands(message)
+
+@announce.error
+async def announce_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("You don't have permission to use this command.")
+    elif isinstance(error, commands.BotMissingPermissions):
+        await ctx.send("I don't have permission to perform this action.")
+    else:
+        await ctx.send("An error occurred while running the command.")
 bot.run(token)
