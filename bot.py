@@ -9,6 +9,7 @@ DESTINATION_CHANNEL_IDS = [
     1300604396555731074,  # Wolves of War
     1300609238023934042,  # Redmoon Cult
     1300646389155627069,  # OneMillionBears
+    1306815142125637633,  # Debaucherie
     # Add more destination channels as needed
 ]
 
