@@ -3,7 +3,7 @@ from datetime import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 
-ECHO_CHANNEL_ID = 1300604396555731074  #wolves-alliance
+ECHO_CHANNEL_ID = 1300604396555731074  # Wolves-alliance
 
 DESTINATION_CHANNEL_IDS = [
     1300604396555731074,  # Wolves of War
@@ -11,7 +11,6 @@ DESTINATION_CHANNEL_IDS = [
     1300646389155627069,  # OneMillionBears
     # Add more destination channels as needed
 ]
-
 
 # Load environment variables
 load_dotenv('bot_config.env')
@@ -59,14 +58,28 @@ async def lootroll(ctx, item: str, time: int = 30):
         return
 
     # Assign random roll numbers (between 1 and 100) to users
-    for user in users:
-        roll_value = random.randint(1, 100)  # Generate a random roll number
-        roll_numbers[item][user.name] = roll_value
+    while True:
+        roll_numbers[item] = {user.name: random.randint(1, 100) for user in users}
 
-        await ctx.send(f"🎲 {user} rolled a {roll_value}.")
+        # Announce each user's roll
+        for user, roll_value in roll_numbers[item].items():
+            await ctx.send(f"🎲 {user} rolled a {roll_value}.")
 
-    winner_name = max(roll_numbers[item], key=roll_numbers[item].get)  # Get the user with the highest roll
-    roll_value = roll_numbers[item][winner_name]
+        # Determine the highest roll(s)
+        max_roll = max(roll_numbers[item].values())
+        winners_list = [user for user, roll in roll_numbers[item].items() if roll == max_roll]
+
+        if len(winners_list) == 1:
+            break  # Single winner found
+        else:
+            # Announce the tie and re-roll
+            tied_users = ", ".join(winners_list)
+            await ctx.send(f"🤔 It's a tie between {tied_users}! Rolling again...")
+
+            users = [user for user in users if user.name in winners_list]
+
+    winner_name = winners_list[0]
+    roll_value = max_roll
 
     if item not in winners:
         winners[item] = []
@@ -79,7 +92,7 @@ async def lootroll(ctx, item: str, time: int = 30):
     await ctx.send(f"Congratulations {winner_name}! You won the **{item}** with Roll #{roll_value}! {random_emoji}")  # Winner emoji
 
     # Lock the reactions by removing the bot's own reaction
-    await message.clear_reactions()  # This line will remove all reactions after the roll is done
+    await message.clear_reactions()
 
 @bot.command(name="clearall", description="Clear all messages in the channel (up to 100).")
 @commands.has_permissions(manage_messages=True)
@@ -144,4 +157,5 @@ async def announce_error(ctx, error):
         await ctx.send("I don't have permission to perform this action.")
     else:
         await ctx.send("An error occurred while running the command.")
+
 bot.run(token)
